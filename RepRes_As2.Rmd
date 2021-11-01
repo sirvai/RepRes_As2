@@ -1,0 +1,187 @@
+---
+title: "RepRes_As2"
+author: "Nikita"
+date: "01 11 2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning=FALSE)
+```
+
+## Intoduction
+Storms and other severe weather events can cause both public health and economic problems for communities and municipalities. Many severe events can result in fatalities, injuries, and property damage, and preventing such outcomes to the extent possible is a key concern.
+
+This project involves exploring the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+
+## Data
+```{r}
+setwd("C:/Users/Admin/Documents/R Projects/Reproducible research")
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+stormDataRaw <- read.csv('repdata_data_StormData.csv.bz2', header = TRUE)
+str(stormDataRaw)
+```
+
+There are 902.297 observations with 37 variables in the file. Only a subset is requrired for the analysis.
+1. Relevant for the analysis are the date (BGN_DATE), event type (EVTYPE), counter for the health impact (FATALITIES and INJURIES), monetary impact on crop and property (PROPDMG and CROPDMG) as well as their corresponding exponents (PROPDMGEXP and CROPDMGEXP).
+2. According to the NOAA (https://www.ncdc.noaa.gov/stormevents/details.jsp) the full set of wheather events (48 event types) is available since 1996. Between 1950 and 1995 only a subset (Tornado, Thunderstorm Wind and Hail) of these events is available in the storm database. In order to have o comparable basis for the analysis the dataset is limited to the observations between 1996 and 2011.
+3. The dataset contains a lot of observations without any information about health and/or economic damages. These observations are excluded from the analysis.
+```{r}
+stormData <- select(stormDataRaw, BGN_DATE, EVTYPE, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP, FATALITIES, INJURIES)
+
+# Format the BGN_DATE variable as a date
+stormData$BGN_DATE <- as.Date(stormData$BGN_DATE, "%m/%d/%Y")
+stormData$YEAR <- year(stormData$BGN_DATE)
+
+# Tornado 1950 - 1954
+# Tornado, Thunderstorm Wind, Hail 1955 - 1995
+# 48 Events since 1996
+# Only use events since 1996
+stormData <- filter(stormData, YEAR >= 1996)
+
+# Only use events with either health impact or economic damage
+stormData <- filter(stormData, PROPDMG > 0 | CROPDMG > 0 | FATALITIES > 0 | INJURIES > 0)
+```
+
+The economical damages provided in the storm dataset require some adjustments. Each variable - CROPDMG and PROPDMG - comes with a separate exponent - CROPDMGEXP and PROPDMGEXP. In the first step the content of the exponent variables need to be converted into a proper factor.
+```{r}
+table(stormData$PROPDMGEXP)
+```
+```{r}
+table(stormData$CROPDMGEXP)
+```
+
+Both exponents are converted to uppercase to adapt all the exponents with the same meaning (eg. h and H). The next steps convert the exponents into corresponding factors:
+“”, “?”, “+”, “-”: 1
+“0”: 1
+“1”: 10
+“2”: 100
+“3”: 1.000
+“4”: 10.000
+“5”: 100.000
+“6”: 1.000.000
+“7”: 10.000.000
+“8”: 100.000.000
+“9”: 1.000.000.000
+“H”: 100
+“K”: 1.000
+“M”: 1.000.000
+*“B”: 1.000.000.000
+
+According to the previous tables, the CROPDMGEXP only contains a subset of these values. Most of the numerical exponents are missing. The factor is only calculated for the exponents provided in that variable.
+
+```{r}
+stormData$PROPDMGEXP <- toupper(stormData$PROPDMGEXP)
+stormData$CROPDMGEXP <- toupper(stormData$CROPDMGEXP)
+
+stormData$CROPDMGFACTOR[(stormData$CROPDMGEXP == "")] <- 10^0
+stormData$CROPDMGFACTOR[(stormData$CROPDMGEXP == "?")] <- 10^0
+stormData$CROPDMGFACTOR[(stormData$CROPDMGEXP == "0")] <- 10^0
+stormData$CROPDMGFACTOR[(stormData$CROPDMGEXP == "2")] <- 10^2
+stormData$CROPDMGFACTOR[(stormData$CROPDMGEXP == "K")] <- 10^3
+stormData$CROPDMGFACTOR[(stormData$CROPDMGEXP == "M")] <- 10^6
+stormData$CROPDMGFACTOR[(stormData$CROPDMGEXP == "B")] <- 10^9
+
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "")] <- 10^0
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "-")] <- 10^0
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "?")] <- 10^0
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "+")] <- 10^0
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "0")] <- 10^0
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "1")] <- 10^1
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "2")] <- 10^2
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "3")] <- 10^3
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "4")] <- 10^4
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "5")] <- 10^5
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "6")] <- 10^6
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "7")] <- 10^7
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "8")] <- 10^8
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "H")] <- 10^2
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "K")] <- 10^3
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "M")] <- 10^6
+stormData$PROPDMGFACTOR[(stormData$PROPDMGEXP == "B")] <- 10^9
+```
+
+The distinction between fatalities and injuries is not important for the existing analysis. Therefore both variables are added to form a new variable HEALTHIMP.
+A similar aproach is used for the economic impact. Both crop and property damages (in USD) are multiplied by their corresponding factor and added to form a new variable ECONOMICCOST.
+
+```{r}
+stormData <- mutate(stormData, HEALTHIMP = FATALITIES + INJURIES)
+stormData <- mutate(stormData, ECONOMICCOST = PROPDMG * PROPDMGFACTOR + CROPDMG * CROPDMGFACTOR)
+```
+
+The event types also require a more detailled examination.
+```{r}
+stormData$EVTYPE <- toupper(stormData$EVTYPE)
+dim(data.frame(table(stormData$EVTYPE)))
+```
+
+After converting the variable EVTYPE to uppercase, there are still 186 different event types listed. According to the NOAA there should be only 48. So there are a lot of duplicates. Here are some examples containing the string “THUND”:
+```{r}
+evtypeUnique <- unique(stormData$EVTYPE)
+evtypeUnique[grep("THUND", evtypeUnique)]
+```
+
+Cleaning all event types is quite a big effort. Since this analysis is looking at the most harmful events, only part of the event types are cleaned. Therefore the health impact (HEALTHIMP) is summed up per event type. Only event types in the 95% quantile are to be cleaned.
+
+```{r}
+healthImpact <- with(stormData, aggregate(HEALTHIMP ~ EVTYPE, FUN = sum))
+subset(healthImpact, HEALTHIMP > quantile(HEALTHIMP, prob = 0.95))
+```
+
+There are only two event types in the 95% quantile, which are not compliant to the official types defined in https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf. These are TSTM WIND and HURRICANE/TYPHOON.
+```{r}
+stormData$EVTYPE[(stormData$EVTYPE == "TSTM WIND")] <- "THUNDERSTORM WIND"
+stormData$EVTYPE[(stormData$EVTYPE == "HURRICANE/TYPHOON")] <- "HURRICANE (TYPHOON)"
+```
+
+The same procedure is been used to clean the event types for the most important economic impacts. After summing up the economic cost ECONOMICCOST, events in the 95% quantile are to be cleaned.
+```{r}
+economicCost <- with(stormData, aggregate(ECONOMICCOST ~ EVTYPE, FUN = sum))
+subset(economicCost, ECONOMICCOST > quantile(ECONOMICCOST, prob = 0.95))
+```
+
+Again there are only two event types in the 95% quantile, which are not compliant to the official types: HURRICANE and STORM SURGE.
+```{r}
+stormData$EVTYPE[(stormData$EVTYPE == "HURRICANE")] <- "HURRICANE (TYPHOON)"
+stormData$EVTYPE[(stormData$EVTYPE == "STORM SURGE")] <- "STORM SURGE/TIDE"
+```
+
+## Results
+The cleaned data frame stormData is been aggregated per EVTYPE and provided in a descending order in the new data frame healthImpact.
+```{r}
+healthImpact <- stormData %>% 
+                group_by(EVTYPE) %>% 
+                summarise(HEALTHIMP = sum(HEALTHIMP)) %>% 
+                arrange(desc(HEALTHIMP))
+#healthImpact[1:10,]
+g1 <- ggplot(healthImpact[1:10,], aes(x=reorder(EVTYPE, -HEALTHIMP),y=HEALTHIMP,color=EVTYPE)) + 
+      geom_bar(stat="identity", fill="white") + 
+      theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+      xlab("Event") + ylab("Number of fatalities and injuries") +
+      theme(legend.position="none") +
+      ggtitle("Fatalities and injuries in the US caused by severe weather events")
+g1
+```
+The barchart shows that Tornados are the most harmful weather events for people’s health.  
+  
+The cleaned data frame stormData is been aggregated per EVTYPE and provided in a descending order in the new data frame economicCost.
+```{r}
+economicCost <- stormData %>% 
+                group_by(EVTYPE) %>% 
+                summarise(ECONOMICCOST = sum(ECONOMICCOST)) %>% 
+                arrange(desc(ECONOMICCOST))
+#economicCost[1:10,]
+g1 <- ggplot(economicCost[1:10,], aes(x=reorder(EVTYPE, -ECONOMICCOST),y=ECONOMICCOST,color=EVTYPE)) + 
+      geom_bar(stat="identity", fill="white") + 
+      theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+      xlab("Event") + ylab("Economic cost in USD") +
+      theme(legend.position="none") +
+      ggtitle("Economic cost in the US caused by severe weather events")
+g1
+```
+
+The barchart shows that Floods cause the biggest economical damages.
